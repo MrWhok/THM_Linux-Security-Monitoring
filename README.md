@@ -2,6 +2,7 @@
 
 ## Table of Contents
 1. [Linux Logging for SOC](#linux-logging-for-soc)
+2. [Linux Threat Detection 1](#linux-threat-detection-1)
 
 ## Linux Logging for SOC
 ### Working with Text Logs
@@ -98,3 +99,103 @@
     ```
     The answer is `192.168.50.0/24`.
 
+
+## Linux Threat Detection 1
+### Initial Access via SSH
+1. When did the ubuntu user log in via SSH for the first time? Answer Example: 2023-09-16.
+
+    We can use this command to find when the ubuntu user logged in via SSH for the first time:
+    
+    ```bash
+    cat /var/log/auth.log | grep "sshd" | grep "Accepted" | grep "ubuntu"
+    ```
+    The answer is `2024-10-22`.
+
+2. Did the ubuntu user use SSH keys instead of a password for the above found date? (Yea/Nay)
+
+    We can check the same log entries for the presence of "publickey" to determine if SSH keys were used. The answer is `Yea`.
+
+### Detecting SSH Attacks
+1. When did the SSH password brute force start? Answer Format: 2023-09-15.
+
+    We can use this command to find when the SSH password brute force started:
+    
+    ```bash
+    cat /var/log/auth.log | grep "sshd" | grep "Failed"
+    ```
+    The answer is `2025-08-21`.
+
+2. Which four users did the botnet attempt to breach? Answer Format: Separate by a comma, in alphabetical order.
+
+    We can analyze with the same filter like in the previous. The answer is `root, roy, sol, user`.
+
+3. Finally, which IP managed to breach the root user?
+
+    We can use this command to find which IP managed to breach the root user:
+    
+    ```bash
+    cat /var/log/auth.log | grep "sshd" | grep root | grep -E "Failed|Accepted"
+    ```
+    The answer is `91.224.92.79`.
+
+### Initial Access via Services
+1. What is the path to the Python file the attacker attempted to open?
+
+    We can use this command to find the path to the Python file the attacker attempted to open:
+    
+    ```bash
+    grep ".py" /var/log/nginx/access.log
+    ```
+    The answer is `/opt/trypingme/main.py`.
+
+2. Looking inside the opened file, what's the flag you see there?
+
+    We can use this command to look inside the opened file:
+    
+    ```bash
+    cat /opt/trypingme/main.py
+    ```
+    The answer is `THM{i_am_vulnerable!}`.
+
+### Detecting Service Breach
+1. What is the PPID of the suspicious whoami command?
+
+    We can use this command to find the PPID of the suspicious whoami command:
+    
+    ```bash
+    ausearch -i -x whoami
+    ```
+    The answer is `1018`.
+
+2. Moving up the tree, what is the PID of the TryPingMe app?
+
+    We can use `ausearch` to examine `whoami` command:
+    
+    ```bash
+    ausearch -i -x whoami
+    ```
+    Then, look for the `ppid` field in the output. We can use the `ppid` value to move up to the tree to find the PID of the TryPingMe app:
+    
+    ```bash
+    ausearch -i --pid 1018
+    ausearch -i --pid 577
+    ```
+    The answer is `577`.
+
+3. Which program did the attacker use to open a reverse shell?
+
+    We already have the PID of the TryPingMe app that is used to execute command, so we can check the same logs for that have  PPID to find which program was used to open a reverse shell:
+    
+    ```bash
+    ausearch -i --ppid 577 | grep proctitle=
+    ```
+    The answer is `python`.
+
+### Advanced Initial Access
+1. Which Initial Access technique is likely used if a trusted app suddenly runs malicious commands?
+
+    The answer is `Supply Chain Compromise`.
+
+2. Which detection method can you use to detect a variety of Initial Access techniques?
+
+    The answer is `process tree analysis`.
