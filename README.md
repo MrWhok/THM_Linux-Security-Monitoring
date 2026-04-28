@@ -2,7 +2,8 @@
 
 ## Table of Contents
 1. [Linux Logging for SOC](#linux-logging-for-soc)
-2. [Linux Threat Detection 1](#linux-threat-detection-1)
+2. [Linux Threat Detection 1](#linux-threat-detection-1) 
+3. [Linux Threat Detection 2](#linux-threat-detection-2)
 
 ## Linux Logging for SOC
 ### Working with Text Logs
@@ -199,3 +200,145 @@
 2. Which detection method can you use to detect a variety of Initial Access techniques?
 
     The answer is `process tree analysis`.
+
+
+## Linux Threat Detection 2
+### Discovery Overview
+1. Run systemd-detect-virt to detect the system's cloud. What is the command's output you discovered?
+
+    We can use this command to detect the system's cloud:
+    
+    ```bash
+    systemd-detect-virt
+    ```
+    The answer is `Amazon`.
+
+2. Now run ps aux and look for EDR or antivirus processes. What is the full path to the detected antimalware binary?
+
+    We can use this command to look for EDR or antivirus processes:
+    
+    ```bash
+    ps aux | grep -E "security|scan|edr|malware"
+    ```
+    The answer is `/var/lib/ultrasec/malscan`.
+
+### Detecting Discovery
+1. What is the path of the script that initiated the "hostname" command?
+
+    We can use this command to find the path of the script that initiated the "hostname" command:
+    
+    ```bash
+    ausearch -i -x hostname
+    ```
+    Then, we can look for the process tree by examining the `ppid` field in the output. 
+
+    ```bash
+    ausearch -i --pid 3771
+    ```
+    The answer is `/home/itsupport/debug.sh`.
+
+2. What was the last Discovery command launched by the script?
+
+    We can continue to examine the process tree to find the last Discovery command launched by the script:
+    
+    ```bash
+    ausearch -i --ppid 3771 | grep proctitle
+    ```
+    The answer is `ps -eo pid,ppid,cmd,%mem,%cpu --sort=-%cpu`.
+
+3. Looking at the script content, what's the email of the script author?
+
+    We can use this command to look at the script content:
+    
+    ```bash
+    cat /home/itsupport/debug.sh
+    ```
+    The answer is `greg@tryhackme.thm`.
+
+### Motivation for Attacks
+1. From which domain was the Elastic agent downloaded?
+
+    We can use this command to find from which domain the Elastic agent was downloaded:
+    
+    ```bash
+    grep -E "wget|curl" /var/log/audit/audit.log | grep elastic
+    ```
+    The answer is `artifacts.elastic.co`.
+
+2. What is the full path to the downloaded "helper.sh" script?
+
+    We can use this command to find the full path to the downloaded "helper.sh" script:
+    
+    ```bash
+    grep -E "wget|curl" /var/log/audit/audit.log | grep helper.sh
+    ```
+    The answer is `/var/tmp/helper.sh`.
+
+3. Which of the downloaded files is more likely to be malicious: The one downloaded with curl or wget?
+
+    This question refers to the two files we found in the previous questions. The elastic agent downloaded with `wget` is a legitimate file, while the `helper.sh` script downloaded with `curl` and also stored in the `/var/temp` which make it more likely to be malicious. Therefore, the answer is `curl`.
+
+### Dota3: First Action
+1. Which IP address managed to brute-force the exposed SSH?
+
+    We can use this command to find which IP address managed to brute-force the exposed SSH:
+    
+    ```bash
+    cat auth.log | grep "sshd" | grep -E 'Accepted|Failed'
+    ```
+    The answer is `45.9.148.125`.
+
+2. Which command did the attacker use to list the last logged-in users?
+
+    We can use this command to find which command the attacker used to list the last logged-in users:
+    
+    ```bash
+    ausearch -i -x last
+    ```
+    We must make sure that it come from the attackers ip address, so we can filter with the `pid` and `ppid` fields to find the correct entry.
+
+    ```bash
+    ausearch -i -if /home/ubuntu/scenario/audit.log --pid 5393
+    ```
+    Here the output:
+
+    ```bash
+    type=USER_LOGIN msg=audit(09/11/25 21:13:33.997:2109) : pid=5393 uid=root auid=root ses=39 subj=unconfined msg='op=login id=root exe=/usr/sbin/sshd hostname=45.9.148.125 addr=45.9.148.125 terminal=/dev/pts/1 res=success'UID="root" AUID="root" ID="root" 
+    ```
+    We can see it has same IP address as the attacker. The answer is `last`.
+
+3. Which three EDR processes did the attacker look for with "egrep"? Answer Format: Separated by a comma, in alphabetical order.
+
+    We can use this command to find which three EDR processes the attacker looked for with "egrep":
+    
+    ```bash
+    ausearch -i -if /home/ubuntu/scenario/audit.log --ppid 5393| grep egrep
+    ```
+    The answer is `ds_agent,falcon,sentinel`.
+
+### Dota3: Miner Setup
+1. What is the name of the malicious archive that was transferred via SCP?
+
+    We can continue to investigate the log that have ppid 5393 to find the name of the malicious archive that was transferred via SCP:
+    
+    ```bash
+    ausearch -i -if /home/ubuntu/scenario/audit.log --ppid 5393
+    ```
+    We will findout that the attacker made `/tmp/.apt` directory and then extracted `kernupd.tar.gz` archive to that directory. The answer is `kernupd.tar.gz`.
+
+2. What was the full command line of the cryptominer launch?
+
+    We can continue with same filter. The answer is `nohup /tmp/.apt/kernupd/kernupd`.
+
+3. Which IP address range did the attacker scan for an exposed SSH? Answer Example: 10.0.0.1-10.0.0.126.
+
+    We can still use the same filter to find which IP address range did the attacker scan for an exposed SSH. We will find that the attacker used this command:
+
+    ```bash
+    type=PROCTITLE msg=audit(09/11/25 21:15:20.513:2287) : proctitle=nohup bash -c for ip in 10.10.12.{1..10}; do nc -zvw1 $ip 22 2>&1 | grep succeeded; done 
+    type=CWD msg=audit(09/11/25 21:15:20.513:2287) : cwd=/tmp 
+    type=EXECVE msg=audit(09/11/25 21:15:20.513:2287) : argc=3 a0=bash a1=-c a2=for ip in 10.10.12.{1..10}; do nc -zvw1 $ip 22 2>&1 | grep succeeded; done 
+    type=SYSCALL msg=audit(09/11/25 21:15:20.513:2287) : arch=x86_64 syscall=execve success=yes exit=0 a0=0x7fff0269de90 a1=0x7fff0269e140 a2=0x7fff0269e160 a3=0x8 items=2 ppid=5393 pid=5518 auid=root uid=root gid=root euid=root suid=root fsuid=root egid=root sgid=root fsgid=root tty=pts1 ses=39 comm=bash exe=/usr/bin/bash subj=unconfined key=exec RCH=x86_64 SYSCALL=execve AUID="root" UID="root" GID="root" EUID="root" SUID="root" FSUID="root" EGID="root" SGID="root" FSGID="root"
+    ```
+    The answer is `10.10.12.1-10.10.12.10`.
+
